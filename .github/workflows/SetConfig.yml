@@ -1,0 +1,96 @@
+name: Setconfig
+
+on: 
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
+env:
+  REPO_URL: https://github.com/sdf8057/ipq6000.git
+  REPO_BRANCH: main
+  #FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: ./config/rm1800.config
+# DIY_P1_SH: ./scripts/diy-part1.sh
+# DIY_P2_SH: ./scripts/diy-part2.sh
+ # UPLOAD_BIN_DIR: false
+ # UPLOAD_FIRMWARE: true
+#  UPLOAD_COWTRANSFER: false
+ # UPLOAD_WETRANSFER: false
+ # UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+# 定时触发编译
+#  schedule:
+#   - cron: 10 2 * * 6
+
+# 点赞☆Star触发编译
+#  watch:
+#    types: [started]
+
+jobs:
+  Setconfig:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v3
+
+    - name: Initialization environment (配置环境)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo timedatectl set-timezone "$TZ" 
+        sudo -E swapoff -a
+        sudo -E rm -f /swapfile
+        sudo -E docker image prune -a -f
+        sudo -E snap set system refresh.retain=2
+        sudo -E apt-get -y purge dotnet* firefox ghc* google* hhvm llvm* mono* mysql* openjdk* php* zulu*
+        sudo -E apt-get -y autoremove --purge
+        sudo -E rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /etc/mysql /etc/php /usr/local/share/boost
+        [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo -E apt-get update -y
+        sudo -E apt-get install -y ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3.8 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev libfuse-dev
+        pip install aligo
+        sudo -E apt-get clean
+        git config --global user.name 'GitHub Actions' && git config --global user.email 'noreply@github.com'
+        df -h
+        
+    - name: Clone source code （拉取源码）
+      run: |
+        df -hT $PWD
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        cd openwrt
+        cp -f ../breeze/diy/b1.sh ./
+        chmod +x ./b1.sh && ./b1.sh
+
+    - name: Update & Install feeds （升级及安装feeds）
+      working-directory: ./openwrt
+      run: |
+        ./scripts/feeds update -a
+
+        ./scripts/feeds install -a
+    
+    - name: Configuration Customization （配置config）
+      run: |
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        cd openwrt && make defconfig
+        
+    - name: SSH connection to Actions
+      uses: P3TERX/ssh2actions@v1.0.0
+      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
+      env:
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}    
+        
+    - name: set config （配置config）
+      run: |
+        cd openwrt && make defconfig    
+    
+        
+    - name: Upload config （上传config）
+      uses: actions/upload-artifact@v3
+      with:
+        name: set-config
+        path: openwrt/.config
+                                   
